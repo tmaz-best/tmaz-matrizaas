@@ -571,6 +571,7 @@ function vigCard(){
 function vProceso(){
   const h=S.hdr;
   return `<section class="panel">
+  ${S.isExample?`<div class="status pend"><span class="ico">i</span><div style="flex:1;min-width:220px"><h2>Ejemplo precargado: taller de equipos portuarios</h2><p>Recorre los pasos para ver cómo se llena, incluidos dos aspectos significativos con su seguimiento y requisito legal. Cuando quieras capturar tu proceso, empieza en blanco o carga los aspectos de la matriz vigente.</p></div><button class="btn primary" id="clrEx">Empezar en blanco</button></div>`:''}
   <div class="card"><h2>1. Proceso</h2>
    <p class="lead">Se llena una matriz por proceso. Al final descargas el Excel con el formato ${FORM.code} y el PDF para firma; Medio Ambiente junta los archivos de todos los procesos con <b>Consolidar</b>.</p>
    <div class="grid2">
@@ -600,6 +601,7 @@ function vProceso(){
    <p class="hint" style="margin:4px 0 12px">Para retomar una matriz, abre su Excel (descargado de esta herramienta o el formato R-11 completo) o su respaldo .json.</p>
    <div class="pillrow" id="resetBox">
     <button class="btn" id="openBtn">Abrir Excel o respaldo…</button>
+    <button class="btn ghost" id="loadEx">Cargar ejemplo</button>
     <button class="btn ghost" id="resetBtn">Empezar un proceso nuevo</button>
    </div>
   </div>
@@ -825,7 +827,7 @@ function arm(btn,key,fn){ if(armed.has(key)){ armed.delete(key); fn(); return; }
 const isEmpty=()=>!S.acts.some(a=>has(a.act)||a.asp.length);
 function loadVig(){
   const area=document.getElementById('vigArea').value; const rr=vigRowsOf(S.hdr.proc,area);
-  const keep={...S.hdr}, ma={...S.firmas.ma};
+  const ex=!!S.isExample; const keep={...S.hdr}, ma=ex?{...blank().firmas.ma}:{...S.firmas.ma}; if(ex){ keep.resp=''; keep.puesto=''; }
   const st=stateFromRows(rr,{proc:keep.proc,macro:keep.macro||macroOf(keep.proc),resp:keep.resp,puesto:keep.puesto,fecha:keep.fecha});
   st.firmas.ma={...ma,firma:null}; st.step=0; S=st; normalize(); S.acts.forEach(a=>closed.add(a.id)); save(); render();
   toast(`${rr.length} aspectos cargados en ${S.acts.length} actividades: revísalos y actualízalos`);
@@ -836,7 +838,7 @@ function wire(m){
   m.querySelectorAll('[data-b]').forEach(el=>el.addEventListener(el.tagName==='SELECT'?'change':'input',()=>{ setP(el.dataset.b,el.value); save(); renderSteps(); if(el.dataset.rr) render(); }));
   m.querySelectorAll('[data-radio]').forEach(el=>el.addEventListener('change',()=>{ setP(el.dataset.radio,el.value); save(); renderSteps(); }));
   const ps=document.getElementById('f-hdr-proc'); if(ps) ps.addEventListener('change',()=>{ S.hdr.proc=ps.value; const mc=macroOf(ps.value); if(mc) S.hdr.macro=mc; save(); render(); });
-  on('vigLoad',()=>{ if(isEmpty()) loadVig(); else confirmBox('vigBox','Se reemplazan las actividades capturadas. ¿Descargaste el respaldo?','Sí, cargar',loadVig); });
+  on('vigLoad',()=>{ if(isEmpty()||S.isExample) loadVig(); else confirmBox('vigBox','Se reemplazan las actividades capturadas. ¿Descargaste el respaldo?','Sí, cargar',loadVig); });
   const os=document.getElementById('onlySig'); if(os) os.onchange=()=>{ S.onlySig=os.checked; save(); render(); };
   // secciones plegables
   m.querySelectorAll('[data-sec]').forEach(hd=>hd.addEventListener('click',()=>{ const id=hd.dataset.sec; closedSec.has(id)?closedSec.delete(id):closedSec.add(id); hd.parentElement.classList.toggle('closed'); }));
@@ -865,6 +867,8 @@ function wire(m){
   m.querySelectorAll('[data-cf]').forEach(el=>el.addEventListener('input',()=>{ const [k,f]=el.dataset.cf.split('.'); CONSF[k][f]=el.value; saveCons(); }));
   // archivo
   on('openBtn',()=>document.getElementById('openIn').click());
+  on('loadEx',()=>{ const go2=()=>{ S=example(); normalize(); save(); render(); toast('Ejemplo cargado'); }; if(isEmpty()||S.isExample) go2(); else confirmBox('resetBox','Se reemplaza la matriz abierta por el ejemplo. ¿Descargaste el respaldo?','Sí, cargar ejemplo',go2); });
+  on('clrEx',()=>{ S=blank(); save(); render(); toast('Listo: matriz en blanco'); });
   on('resetBtn',()=>confirmBox('resetBox','Se borra la matriz abierta en este navegador. ¿Descargaste el respaldo?','Sí, empezar de nuevo',()=>{ S=blank(); save(); render(); toast('Proceso nuevo'); }));
   on('jsonBtn',backup);
   m.querySelectorAll('[data-backup]').forEach(b=>b.onclick=backup);
@@ -954,6 +958,42 @@ document.getElementById('sigSave').onclick=()=>{
   dlg.close(); setSig(sigTarget,{data:out.toDataURL('image/png'),w:out.width,h:out.height,ts:Date.now()}); toast('Firma guardada');
 };
 window.addEventListener('resize',()=>{ if(dlg.open&&!inked) setupCanvas(); });
+
+/* ---------- ejemplo ---------- */
+function example(){
+  const st=blank(); st.isExample=true;
+  const add=days=>{ const x=new Date(); x.setDate(x.getDate()+days); const z=v=>String(v).padStart(2,'0'); return `${x.getFullYear()}-${z(x.getMonth()+1)}-${z(x.getDate())}`; };
+  st.hdr={macro:'Procesos de apoyo',proc:'Gestión de activos',resp:'Nombre del responsable (ejemplo)',puesto:'Jefe de Equipos Portuarios',fecha:today()};
+  st.firmas.ma.nombre='Nombre de Medio Ambiente (ejemplo)';
+  const P=(o)=>{ const p=newAsp(); Object.assign(p,o); const ct=aspFind(p.asp); if(ct&&!o.imp) p.imp=ct.i.split('').map(Number); p.segOn=hasSeg(p); p.legOn=hasLeg(p); return p; };
+  const A=(act,asp)=>Object.assign(newAct(),{area:'Equipos portuarios',pdto:'Procedimiento de equipos portuarios',act,asp});
+  st.acts=[
+   A('Cambio de aceite y filtros a tractocamión (mantenimiento preventivo)',[
+    P({asp:'GENERACIÓN RESIDUOS PELIGROSOS',ag:'INTERNO',cond:'NORMALES',temp:'ACTIVIDADES PRESENTES',ent:'SUSTANCIAS QUÍMICAS',sal:'RESIDUOS PELIGROSOS',etapa:'MANTENIMIENTO',causa:'Drenado de aceite usado y retiro de filtros y estopas impregnadas de aceite.',D:2,G:2,F:4,
+      pri:'2 MEDIA',fund:'Generación constante de aceite usado, filtros y estopas en cada servicio; debe manejarse como residuo peligroso.',cons:'Contaminación de suelo y agua por mal manejo o almacenamiento del residuo.',
+      ctl:'1. Recolección en contenedores identificados en el taller. 2. Traslado al almacén temporal de residuos peligrosos. 3. Bitácora de generación. 4. Disposición con empresa autorizada.',fCtl:'Por Servicio',
+      obj:'100% del aceite usado y filtros dispuestos con manifiesto.',plan:'Instalar charolas de contención fijas en la fosa del taller y reforzar la segregación de residuos con los mecánicos.',cap:'Plática de manejo de residuos peligrosos a mecánicos (semestral).',tAcc:'ACCIÓN PREVENTIVA',cost:'$18,000 MXN (charolas y señalización)',rsp:'Jefe de Equipos Portuarios / Medio Ambiente',estP:'EN DESARROLLO',fImp:add(-20),fCie:add(60),com:'Charolas cotizadas; pendiente orden de compra.',eObj:'Manifiestos de entrega, transporte y recepción',
+      req:'LGPGIR y su Reglamento; NOM-052-SEMARNAT-2005 (ejemplo: validar con Medio Ambiente).',cLeg:'CUMPLE',evid:'Bitácora de residuos peligrosos y manifiestos de la empresa recolectora.',iMeta:'100% de RP con manifiesto',iAct:'100%',estG:'CONTROLADO CON MONITOREO'}),
+    P({asp:'POSIBLE DERRAME DE MATERIALES PELIGROSOS',ag:'INTERNO',cond:'INCIDENTES',temp:'ACTIVIDADES PRESENTES',ent:'SUSTANCIAS QUÍMICAS',sal:'RESIDUOS PELIGROSOS',etapa:'MANTENIMIENTO',causa:'Derrame de aceite al drenar el cárter o por manguera hidráulica dañada durante el servicio.',D:1,G:3,F:4,
+      pri:'1 ALTA',fund:'El taller está cerca de registros pluviales que descargan al mar; un derrame puede llegar al cuerpo de agua.',cons:'Contaminación de suelo y agua de mar por escurrimiento de aceite.',
+      ctl:'Kit antiderrames en el taller, material absorbente y respuesta conforme al Manual de emergencias ambientales TMAZ-SIG-AMB-MAN-09.',fCtl:'Mensual',
+      obj:'0 derrames que lleguen a registros pluviales.',plan:'Colocar barreras en los registros pluviales cercanos al taller y realizar simulacro de derrame con la brigada.',cap:'Simulacro de respuesta a derrames (anual).',tAcc:'ACCIÓN PREVENTIVA',cost:'$12,000 MXN (barreras y absorbentes)',rsp:'Medio Ambiente / Jefe de Equipos Portuarios',estP:'EN PLANEACIÓN',fImp:add(15),fCie:add(90),
+      req:'Manual de emergencias ambientales TMAZ-SIG-AMB-MAN-09; LGPGIR (ejemplo: validar con Medio Ambiente).',cLeg:'CUMPLE',evid:'Inventario de kits antiderrame y registro del último simulacro.',iMeta:'0 derrames',iAct:'0',estG:'CONTROLADO CON MONITOREO'}),
+    P({asp:'CONSUMO DE ENERGÍA',ag:'INTERNO',cond:'NORMALES',temp:'ACTIVIDADES PRESENTES',ent:'ENERGÍA',sal:'GASES EMITIDOS',etapa:'MANTENIMIENTO',causa:'Uso de compresor y herramienta eléctrica en el taller.',D:1,G:1,F:4})
+   ]),
+   A('Lavado de equipos portuarios',[
+    P({asp:'CONSUMO DE AGUA',ag:'INTERNO',cond:'NORMALES',temp:'ACTIVIDADES PRESENTES',ent:'AGUA',sal:'AGUAS RESIDUALES',etapa:'MANTENIMIENTO',causa:'Lavado de equipos con hidrolavadora.',D:1,G:1,F:3}),
+    P({asp:'VERTIDO DE AGUAS RESIDUALES',ag:'INTERNO',cond:'NORMALES',temp:'ACTIVIDADES PRESENTES',ent:'AGUA',sal:'AGUAS RESIDUALES',etapa:'MANTENIMIENTO',causa:'Agua de lavado con grasas y lodos que llega al drenaje.',D:1,G:2,F:3})
+   ]),
+   A('Traslado de equipos dentro de la terminal',[
+    P({asp:'EMISIONES MÓVILES',ag:'INTERNO',cond:'NORMALES',temp:'ACTIVIDADES PRESENTES',ent:'SUSTANCIAS QUÍMICAS',sal:'GASES EMITIDOS',etapa:'OPERACIÓN',causa:'Combustión de diésel en tractocamiones y montacargas.',D:1,G:1,F:4})
+   ]),
+   A('Almacenamiento de aceites y lubricantes en el taller',[
+    P({asp:'ALMACENAMIENTO DE SUSTANCIAS QUÍMICAS PELIGROSAS',ag:'INTERNO',cond:'NORMALES',temp:'ACTIVIDADES PRESENTES',ent:'SUSTANCIAS QUÍMICAS',sal:'RESIDUOS PELIGROSOS',etapa:'MANTENIMIENTO',causa:'Tambores de aceite nuevo y lubricantes resguardados en el taller.',D:1,G:2,F:4})
+   ])
+  ];
+  return st;
+}
 
 /* ================= Excel (.xlsx) escrito a mano con JSZip ================= */
 const COLS=[
@@ -1292,7 +1332,7 @@ async function buildPdf(rows,info){
 
 /* ---------- inicio ---------- */
 (async()=>{
-  const saved=await loadSaved(); if(saved){ S=saved; } normalize();
+  const saved=await loadSaved(); if(saved){ S=saved; } else { S=example(); } normalize();
   try{ const c=await fetchKey(KEY+'-cons'); if(c) CONS=JSON.parse(c)||[]; }catch(e){ CONS=[]; }
   try{ const c=await fetchKey(KEY+'-consf'); if(c) CONSF=merge(blankConsF(),JSON.parse(c)); }catch(e){}
   if(saved) ind('Recuperado de este navegador');
